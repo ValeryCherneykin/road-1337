@@ -1,0 +1,178 @@
+# ------------------------------
+# Go Binaries & Build Artifacts
+# ------------------------------
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Build directories
+bin/
+dist/
+build/
+_build/
+
+# ------------------------------
+# Go Test & Coverage
+# ------------------------------
+*.coverprofile
+coverage.out
+coverage.html
+coverage.txt
+coverage.xml
+profile.cov
+
+# Benchmark results
+*.bench
+bench.txt
+benchstat.txt
+old.txt
+new.txt
+
+# Profiling
+*.prof
+*.pprof
+cpu.prof
+mem.prof
+trace.out
+
+# ------------------------------
+# Go Module & Workspace
+# ------------------------------
+# Workspace files (Go 1.18+)
+go.work
+go.work.sum
+
+# Vendored dependencies (if not checking in vendor/)
+# vendor/
+
+# ------------------------------
+# Environment & Secrets
+# ------------------------------
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+secrets/
+
+# ------------------------------
+# Logs
+# ------------------------------
+*.log
+logs/
+log/
+
+# ------------------------------
+# Temporary & Cache
+# ------------------------------
+tmp/
+temp/
+.cache/
+.temp/
+
+# Go cache
+go-build/
+
+# ------------------------------
+# IDE & Editors
+# ------------------------------
+# JetBrains (GoLand, IntelliJ)
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# VSCode
+.vscode/
+*.code-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+\#*\#
+.\#*
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# ------------------------------
+# OS Files
+# ------------------------------
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+.directory
+
+# ------------------------------
+# Development Tools
+# ------------------------------
+# Air (live reload)
+.air.toml
+tmp/
+
+# MCP (если используешь)
+.mcp.json
+
+# golangci-lint cache
+.golangci/
+
+# Task runner
+.task/
+
+# ------------------------------
+# Documentation (generated)
+# ------------------------------
+# Если генерируешь docs автоматически
+# docs/_build/
+# docs/.doctrees/
+
+# ------------------------------
+# Release / Distribution
+# ------------------------------
+# Goreleaser
+dist/
+.goreleaser.yaml.bak
+
+# ------------------------------
+# Examples (if building)
+# ------------------------------
+# examples/*/main
+# examples/*/*.exe
+
+# ------------------------------
+# Benchmarks (optional - можешь коммитить результаты)
+# ------------------------------
+# benchmarks/*.txt
+# benchmarks/*.out
+
+# ------------------------------
+# CI/CD Artifacts (local)
+# ------------------------------
+.test-results/
+junit.xml
+
+# ------------------------------
+# Security Scanning
+# ------------------------------
+.trivy/
+.snyk/

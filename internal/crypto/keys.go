@@ -56,7 +56,7 @@ func GenerateKeyPair() (*KeyPair, error) {
 // This representation is designed for Out-of-Band (OOB) sharing (e.g., via chat),
 // ensuring the key string remains intact and visually clear.
 func (kp *KeyPair) PublicKeyBase58() string {
-	return encodeBase58(kp.publicKey.Bytes())
+	return EncodeBase58(kp.publicKey.Bytes())
 }
 
 // PublicKeyHash computes the SHA-256 hash of the public key.
@@ -176,7 +176,7 @@ func KeyPairFromRawBytes(rawPriv []byte) (*KeyPair, error) {
 // PublicKeyFromBase58 decodes a Base58 string back into raw public key bytes.
 // Typically used during connection establishment (e.g., parsing IP:PORT@PUBKEY).
 func PublicKeyFromBase58(s string) ([]byte, error) {
-	raw, err := decodeBase58(s)
+	raw, err := DecodeBase58(s)
 	if err != nil {
 		return nil, fmt.Errorf("decode Base58 public key: %w", err)
 	}

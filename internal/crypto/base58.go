@@ -11,7 +11,7 @@ const base58Alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwx
 // encodeBase58 converts a byte slice into a Base58 string.
 // This implementation is zero-dependency and intentionally handles leading zeros
 // to preserve the exact byte length, which is critical for cryptographic keys.
-func encodeBase58(input []byte) string {
+func EncodeBase58(input []byte) string {
 	leadingZeros := 0
 	for _, b := range input {
 		if b != 0 {
@@ -49,7 +49,7 @@ func encodeBase58(input []byte) string {
 
 // decodeBase58 decodes a Base58 encoded string back into a byte slice.
 // Returns an error if the string contains invalid characters not present in the alphabet.
-func decodeBase58(s string) ([]byte, error) {
+func DecodeBase58(s string) ([]byte, error) {
 	// Pre-compute alphabet map for O(1) lookups instead of strings.Index
 	alphabetMap := make(map[byte]int, 58)
 	for i := range base58Alphabet {

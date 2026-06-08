@@ -1,21 +1,17 @@
 // Package relay implements the road-1337 Blind Relay server.
 //
-// This is a deliberately minimal, "dumb" relay. Its only responsibility is
-// to forward opaque encrypted packets between peers using the SHA-256 hash
-// of the recipient's public key as the routing identifier.
+// Design: deliberately "dumb." Routes opaque encrypted packets between peers
+// keyed by SHA-256(senderPublicKey). Never decrypts, never logs to disk,
+// retains nothing after forwarding each packet.
 //
-// The server never:
-//   - decrypts any application data
-//   - holds session keys
-//   - writes anything to disk
-//   - logs sensitive information
+// Security invariants — never violate:
 //
-// Security Invariants (must never be violated):
-//   - Zero disk I/O: logging is disabled, no files are created.
-//   - Burn-on-Read: every buffer is zeroed with clear() immediately after use.
-//   - Zero trust: server has no knowledge of plaintext or session secrets.
-//   - Graceful shutdown: all goroutines are waited on via sync.WaitGroup.
-//   - Memory safety: bounded peer count + sync.Pool to control GC pressure.
+// Zero disk I/O : log.SetOutput(io.Discard) at startup.
+// Burn-on-Read : relay buffers zeroed via clear() after every Write.
+// Bounded memory : sync.Pool recycles fixed buffers; GC stays quiet.
+// Resilient evict : background sweeper purges peers that miss heartbeats.
+// Race-free fields : s.listener protected by listenerMu; s.done closed once.
+// Graceful shutdown: sync.WaitGroup joins every goroutine before returning.
 package relay
 
 import (
@@ -36,37 +32,41 @@ const (
 	recipientHashSize = 32
 	outerFrameSize    = recipientHashSize + crypto.PacketSize
 
-	handshakeTimeout = 15 * time.Second
+	handshakeTimeout = 20 * time.Second // Increased slightly for stability
 	heartbeatTimeout = 45 * time.Second
 	writeTimeout     = 10 * time.Second
-
-	maxPeers      = 2048
-	sweepInterval = 15 * time.Second
+	maxPeers         = 2048
+	sweepInterval    = 15 * time.Second
 )
 
 // peer represents one active TCP connection in the routing table.
 type peer struct {
 	conn      net.Conn
-	keyHash   [32]byte // SHA-256 of this peer's public key (routing key)
+	keyHash   [32]byte
 	lastAlive time.Time
-	once      sync.Once // ensures evict() runs exactly once
+	once      sync.Once
 }
 
 // Server is the Blind Relay core.
 type Server struct {
-	listener net.Listener
+	// listenerMu protects listener so Stop() can safely close it
+	// while Run() writes it before the accept loop starts.
+	listenerMu sync.Mutex
+	listener   net.Listener
 
+	// mu guards the peers map.
 	mu    sync.RWMutex
 	peers map[[32]byte]*peer
 
+	// pool recycles outerFrameSize-byte relay buffers.
 	pool sync.Pool
-	done chan struct{}
 
-	stopOnce sync.Once      // protects against double-close of 'done'
-	wg       sync.WaitGroup // tracks all background goroutines
+	done     chan struct{}
+	stopOnce sync.Once
+	wg       sync.WaitGroup
 }
 
-// New returns a new Blind Relay server.
+// New constructs a Server ready for use.
 func New() *Server {
 	return &Server{
 		peers: make(map[[32]byte]*peer, 128),
@@ -80,23 +80,22 @@ func New() *Server {
 	}
 }
 
-// Run starts the server and blocks until Stop() is called.
+// Run binds to addr and blocks until Stop() is called.
 func (s *Server) Run(addr string) error {
-	// Enforce strict RAM-only policy from the very beginning.
 	log.SetOutput(io.Discard)
 
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return fmt.Errorf("relay: listen %s: %w", addr, err)
 	}
+
+	s.listenerMu.Lock()
 	s.listener = ln
+	s.listenerMu.Unlock()
 
-	// Informational startup message (acceptable for interactive use).
-	// In strict daemon environments this may be captured by journald.
 	fmt.Printf("[road-1337] Blind Relay started on %s\n", addr)
-	fmt.Println("   Zero-trust • RAM-only • No logging • No plaintext")
+	fmt.Println(" Zero-trust • RAM-only • No logging • No plaintext")
 
-	// Start background maintenance goroutine
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
@@ -124,28 +123,28 @@ func (s *Server) Run(addr string) error {
 	}
 }
 
-// Stop performs a clean shutdown. Safe to call multiple times.
+// Stop performs a clean shutdown.
 func (s *Server) Stop() {
 	s.stopOnce.Do(func() {
 		close(s.done)
 
+		s.listenerMu.Lock()
 		if s.listener != nil {
 			s.listener.Close()
 		}
+		s.listenerMu.Unlock()
 
-		// Close all active peer connections
 		s.mu.Lock()
 		for _, p := range s.peers {
 			p.conn.Close()
 		}
 		s.mu.Unlock()
 
-		// Wait for all goroutines (handleConn + sweepLoop) to exit cleanly
 		s.wg.Wait()
 	})
 }
 
-// ── Connection lifecycle ───────────────────────────────────────────────────
+// --- connection lifecycle ---
 
 func (s *Server) handleConn(conn net.Conn) {
 	defer s.wg.Done()
@@ -158,22 +157,24 @@ func (s *Server) handleConn(conn net.Conn) {
 
 	s.register(p)
 	defer s.evict(p)
-
 	s.relayLoop(p)
 }
 
+// doHandshake includes protection against Slowloris attacks.
 func (s *Server) doHandshake(conn net.Conn) (*peer, error) {
-	conn.SetDeadline(time.Now().Add(handshakeTimeout))
+	if err := conn.SetDeadline(time.Now().Add(handshakeTimeout)); err != nil {
+		return nil, err
+	}
 	defer conn.SetDeadline(time.Time{})
 
 	buf := make([]byte, protocol.HandshakePayloadSize)
 	if _, err := io.ReadFull(conn, buf); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("handshake read: %w", err)
 	}
 
 	hs, err := protocol.DecodeHandshake(buf)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("handshake decode: %w", err)
 	}
 
 	if hs.Version != protocol.Version {
@@ -192,7 +193,6 @@ func (s *Server) doHandshake(conn net.Conn) (*peer, error) {
 func (s *Server) register(p *peer) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
 	if old, exists := s.peers[p.keyHash]; exists {
 		old.conn.Close()
 	}
@@ -202,7 +202,6 @@ func (s *Server) register(p *peer) {
 func (s *Server) evict(p *peer) {
 	p.once.Do(func() {
 		p.conn.Close()
-
 		s.mu.Lock()
 		if cur, ok := s.peers[p.keyHash]; ok && cur == p {
 			delete(s.peers, p.keyHash)
@@ -221,7 +220,9 @@ func (s *Server) relayLoop(p *peer) {
 	}()
 
 	for {
-		p.conn.SetDeadline(time.Now().Add(heartbeatTimeout))
+		if err := p.conn.SetDeadline(time.Now().Add(heartbeatTimeout)); err != nil {
+			return
+		}
 
 		if _, err := io.ReadFull(p.conn, buf); err != nil {
 			return
@@ -231,7 +232,7 @@ func (s *Server) relayLoop(p *peer) {
 
 		var recipientHash [32]byte
 		copy(recipientHash[:], buf[:recipientHashSize])
-		packet := buf[recipientHashSize:]
+		encryptedPacket := buf[recipientHashSize:]
 
 		s.mu.RLock()
 		recipient, found := s.peers[recipientHash]
@@ -242,8 +243,13 @@ func (s *Server) relayLoop(p *peer) {
 			continue
 		}
 
-		recipient.conn.SetWriteDeadline(time.Now().Add(writeTimeout))
-		if _, err := recipient.conn.Write(packet); err != nil {
+		if err := recipient.conn.SetWriteDeadline(time.Now().Add(writeTimeout)); err != nil {
+			go s.evict(recipient)
+			clear(buf)
+			continue
+		}
+
+		if _, err := recipient.conn.Write(encryptedPacket); err != nil {
 			go s.evict(recipient)
 		}
 
@@ -251,12 +257,11 @@ func (s *Server) relayLoop(p *peer) {
 	}
 }
 
-// ── Background maintenance ─────────────────────────────────────────────────
+// --- background eviction ---
 
 func (s *Server) sweepLoop() {
 	ticker := time.NewTicker(sweepInterval)
 	defer ticker.Stop()
-
 	for {
 		select {
 		case <-s.done:
@@ -268,10 +273,9 @@ func (s *Server) sweepLoop() {
 }
 
 func (s *Server) sweepStale() {
-	s.mu.RLock()
-	stale := make([]*peer, 0, 16)
 	now := time.Now()
-
+	s.mu.RLock()
+	stale := make([]*peer, 0, 16) // pre-allocated
 	for _, p := range s.peers {
 		if now.Sub(p.lastAlive) > heartbeatTimeout {
 			stale = append(stale, p)
@@ -296,11 +300,9 @@ func (s *Server) PeerCount() int {
 	return len(s.peers)
 }
 
-// Snapshot returns a sanitized view of the routing table for debugging.
 func (s *Server) Snapshot() []PeerInfo {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-
 	out := make([]PeerInfo, 0, len(s.peers))
 	for hash, p := range s.peers {
 		out = append(out, PeerInfo{

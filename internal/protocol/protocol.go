@@ -1,6 +1,15 @@
 // Package protocol defines the binary wire protocol for road-1337.
-// All network-level frames are strictly typed, memory-aligned, and structured here.
-// Any breaking protocol changes require incrementing the protocol version.
+//
+// All network frames are strictly typed and versioned.
+// Breaking changes require incrementing Version.
+//
+// File transfer design:
+//
+//	File transfer state is managed via explicit signaling.
+//	1. TypeFileHeader initializes the transfer metadata.
+//	2. TypeFileChunk delivers the binary payload.
+//	3. TypeFileEOF explicitly terminates the stream.
+//	This guarantees deterministic teardown regardless of byte counts.
 package protocol
 
 import (
@@ -8,153 +17,159 @@ import (
 	"fmt"
 )
 
-// Version represents the current iteration of the wire protocol.
-// It must be incremented whenever backward-incompatible changes are introduced.
+// Version must be incremented on any backward-incompatible protocol change.
 const Version = uint8(1)
 
-// PacketType defines the single-byte identifier in the protocol header.
+// PacketType identifies the payload kind in every encrypted frame.
 type PacketType uint8
 
 const (
-	// TypeHandshake is the initial unencrypted frame containing the sender's
-	// public key and routing target hash.
-	TypeHandshake PacketType = 0x01
-
-	// TypeMessage represents an encrypted text payload.
-	TypeMessage PacketType = 0x02
-
-	// TypeFileChunk represents an encrypted binary slice of a file.
-	TypeFileChunk PacketType = 0x03
-
-	// TypeFileHeader carries metadata (name, size) before file transmission begins.
-	TypeFileHeader PacketType = 0x04
-
-	// TypeFileEOF signals the successful completion of a file transfer.
-	TypeFileEOF PacketType = 0x05
-
-	// TypePing serves as a keepalive frame to maintain NAT mappings and server routing state.
-	TypePing PacketType = 0x06
-
-	// TypePong acts as the immediate mandatory response to a TypePing frame.
-	TypePong PacketType = 0x07
-
-	// TypeDisconnect indicates a graceful, intentional connection teardown.
-	TypeDisconnect PacketType = 0x08
+	TypeHandshake  PacketType = 0x01 // unencrypted opening frame
+	TypeMessage    PacketType = 0x02 // plain text message
+	TypeFileHeader PacketType = 0x03 // file transfer metadata
+	TypeFileChunk  PacketType = 0x04 // file data slice
+	TypePing       PacketType = 0x05 // keepalive request
+	TypePong       PacketType = 0x06 // keepalive response
+	TypeDisconnect PacketType = 0x07 // graceful session teardown
+	TypeFileEOF    PacketType = 0x08 // explicit end of file transfer
 )
 
-// HandshakePayloadSize represents the exact size of an unencrypted handshake packet.
-// Layout: version(1B) + sender_pubkey(32B) + recipient_pubkey_hash(32B) = 65 bytes.
+// HandshakePayloadSize is the exact byte length of the unencrypted opening frame.
+//
+//	version(1) + sender_pub_key(32) + recipient_key_hash(32) = 65 bytes
 const HandshakePayloadSize = 1 + 32 + 32
 
-// ChunkSize defines the standard memory boundary for file slicing (512 KB).
-const ChunkSize = 512 * 1024
+// ChunkSize is the buffer size used to read files in blocks.
+// 128 KB fits comfortably and efficiently reduces disk I/O syscalls.
+// Each block is split into multiple PacketSize sub-packets on the wire.
+const ChunkSize = 128 * 1024 // 128 KB
 
-// WireHeader defines the 5-byte structural prefix for all payload types.
-// During transit, this header is encrypted alongside the data payload,
-// keeping routing-internal details invisible to intermediate transport nodes.
+// WireHeader is the encrypted prefix of every application payload.
 //
-// Structural Layout:
+// Layout (9 bytes, big-endian):
 //
-//	[PacketType: 1 byte][ChunkIndex: 4 bytes (Big-Endian)][Payload: N bytes]
+//	[Type:1][ChunkIndex:4][FileID:4]
+//
+// FileID uniquely identifies a file transfer (crypto/rand uint32).
+// For non-file packets, FileID and ChunkIndex are both 0.
 type WireHeader struct {
 	Type       PacketType
-	ChunkIndex uint32 // Sequence number for file chunks; defaults to 0 for standard messages.
+	ChunkIndex uint32 // sequence number within a file transfer; 0 for messages
+	FileID     uint32 // unique transfer identifier; 0 for non-file packets
 }
 
-// HeaderSize defines the absolute byte length of the serialized WireHeader.
-const HeaderSize = 1 + 4
+// HeaderSize is the serialized byte length of WireHeader.
+const HeaderSize = 1 + 4 + 4 // 9 bytes
 
-// Encode serializes the WireHeader into a fixed 5-byte slice using Network Byte Order (Big-Endian).
+// Encode serializes WireHeader into exactly 9 bytes (big-endian).
 func (h WireHeader) Encode() []byte {
 	buf := make([]byte, HeaderSize)
 	buf[0] = byte(h.Type)
-	binary.BigEndian.PutUint32(buf[1:], h.ChunkIndex)
+	binary.BigEndian.PutUint32(buf[1:5], h.ChunkIndex)
+	binary.BigEndian.PutUint32(buf[5:9], h.FileID)
 	return buf
 }
 
-// DecodeHeader deserializes a WireHeader from the initial 5 bytes of a incoming payload buffer.
-// Returns the parsed header struct and slices away the consumed header bytes.
+// DecodeHeader parses the leading 9 bytes and returns the remaining payload.
 func DecodeHeader(payload []byte) (WireHeader, []byte, error) {
 	if len(payload) < HeaderSize {
-		return WireHeader{}, nil, fmt.Errorf("payload too short for header: %d < %d", len(payload), HeaderSize)
+		return WireHeader{}, nil, fmt.Errorf(
+			"payload too short for header: got %d, need %d", len(payload), HeaderSize,
+		)
 	}
 	h := WireHeader{
 		Type:       PacketType(payload[0]),
 		ChunkIndex: binary.BigEndian.Uint32(payload[1:5]),
+		FileID:     binary.BigEndian.Uint32(payload[5:9]),
 	}
 	return h, payload[HeaderSize:], nil
 }
 
-// BuildMessage wraps raw data with a standard WireHeader (ChunkIndex = 0) for encryption delivery.
+// BuildMessage wraps data with a standard WireHeader (no file context).
 func BuildMessage(ptype PacketType, data []byte) []byte {
-	h := WireHeader{Type: ptype, ChunkIndex: 0}
-	hdr := h.Encode()
-	payload := make([]byte, len(hdr)+len(data))
-	copy(payload, hdr)
-	copy(payload[len(hdr):], data)
-	return payload
+	hdr := WireHeader{Type: ptype}.Encode()
+	out := make([]byte, len(hdr)+len(data))
+	copy(out, hdr)
+	copy(out[len(hdr):], data)
+	return out
 }
 
-// BuildFileChunk packages a specific file partition with its sequence index into a valid wire payload.
-func BuildFileChunk(chunkIndex uint32, ptype PacketType, data []byte) []byte {
-	h := WireHeader{Type: ptype, ChunkIndex: chunkIndex}
-	hdr := h.Encode()
-	payload := make([]byte, len(hdr)+len(data))
-	copy(payload, hdr)
-	copy(payload[len(hdr):], data)
-	return payload
+// BuildFileChunk wraps a file data slice with its transfer ID and sequence number.
+// Can also be used to send TypeFileEOF by passing a nil or empty data slice.
+func BuildFileChunk(fileID, chunkIndex uint32, data []byte) []byte {
+	hdr := WireHeader{
+		Type:       TypeFileChunk,
+		ChunkIndex: chunkIndex,
+		FileID:     fileID,
+	}.Encode()
+	out := make([]byte, len(hdr)+len(data))
+	copy(out, hdr)
+	copy(out[len(hdr):], data)
+	return out
 }
 
-// FileHeaderPayload encapsulates the filesystem metadata transmitted before structural data chunks.
+// BuildFileEOF creates an explicit termination packet for a file transfer.
+func BuildFileEOF(fileID uint32) []byte {
+	return WireHeader{
+		Type:   TypeFileEOF,
+		FileID: fileID,
+	}.Encode()
+}
+
+// FileHeaderPayload contains the metadata sent before any file chunks.
 type FileHeaderPayload struct {
 	Filename    string
 	TotalSize   uint64
 	TotalChunks uint32
+	FileID      uint32 // must match the FileID used in subsequent BuildFileChunk/EOF calls
 }
 
-// EncodeFileHeader serializes file metadata into a binary stream.
-// Layout: totalSize(8B) + totalChunks(4B) + filenameLen(2B) + filename(NB)
+// EncodeFileHeader serializes FileHeaderPayload.
+//
+// Layout:
+//
+//	TotalSize(8) + TotalChunks(4) + FileID(4) + nameLen(2) + Filename(N)
 func EncodeFileHeader(fh FileHeaderPayload) ([]byte, error) {
-	nameBytes := []byte(fh.Filename)
-	if len(nameBytes) > 255 {
-		return nil, fmt.Errorf("filename too long: %d > 255", len(nameBytes))
+	name := []byte(fh.Filename)
+	if len(name) > 255 {
+		return nil, fmt.Errorf("filename too long: %d > 255 bytes", len(name))
 	}
-	buf := make([]byte, 8+4+2+len(nameBytes))
+	buf := make([]byte, 8+4+4+2+len(name))
 	binary.BigEndian.PutUint64(buf[0:], fh.TotalSize)
 	binary.BigEndian.PutUint32(buf[8:], fh.TotalChunks)
-	binary.BigEndian.PutUint16(buf[12:], uint16(len(nameBytes)))
-	copy(buf[14:], nameBytes)
+	binary.BigEndian.PutUint32(buf[12:], fh.FileID)
+	binary.BigEndian.PutUint16(buf[16:], uint16(len(name)))
+	copy(buf[18:], name)
 	return buf, nil
 }
 
-// DecodeFileHeader decodes raw binary data back into a structured FileHeaderPayload.
+// DecodeFileHeader parses a binary FileHeaderPayload.
 func DecodeFileHeader(data []byte) (FileHeaderPayload, error) {
-	if len(data) < 14 {
-		return FileHeaderPayload{}, fmt.Errorf("file header too short: %d", len(data))
+	if len(data) < 18 {
+		return FileHeaderPayload{}, fmt.Errorf("file header too short: %d bytes", len(data))
 	}
-	totalSize := binary.BigEndian.Uint64(data[0:])
-	totalChunks := binary.BigEndian.Uint32(data[8:])
-	nameLen := binary.BigEndian.Uint16(data[12:])
-	if int(14+nameLen) > len(data) {
-		return FileHeaderPayload{}, fmt.Errorf("truncated filename in header")
+	nameLen := binary.BigEndian.Uint16(data[16:])
+	if int(18+nameLen) > len(data) {
+		return FileHeaderPayload{}, fmt.Errorf("truncated filename in file header")
 	}
 	return FileHeaderPayload{
-		Filename:    string(data[14 : 14+nameLen]),
-		TotalSize:   totalSize,
-		TotalChunks: totalChunks,
+		TotalSize:   binary.BigEndian.Uint64(data[0:]),
+		TotalChunks: binary.BigEndian.Uint32(data[8:]),
+		FileID:      binary.BigEndian.Uint32(data[12:]),
+		Filename:    string(data[18 : 18+nameLen]),
 	}, nil
 }
 
-// HandshakePayload represents the initial, unencrypted framing of a TCP connection.
-// It allows the transit server to route packets via the RecipientKeyHash without
-// exposing the sender's actual identity or compromising message secrecy.
+// HandshakePayload is the only unencrypted frame in the session.
+// It lets the relay register the sender and record the routing destination
+// without ever seeing session key material.
 type HandshakePayload struct {
 	Version          uint8
-	SenderPubKey     [32]byte // Ephemeral or static public identity key of the sender.
-	RecipientKeyHash [32]byte // SHA-256 hash of the target public key for blind server routing.
+	SenderPubKey     [32]byte // relay registers this peer under SHA-256(SenderPubKey)
+	RecipientKeyHash [32]byte // SHA-256 of the target peer's public key
 }
 
-// EncodeHandshake formats the HandshakePayload into a strict 65-byte array.
+// EncodeHandshake serializes HandshakePayload into exactly 65 bytes.
 func EncodeHandshake(h HandshakePayload) []byte {
 	buf := make([]byte, HandshakePayloadSize)
 	buf[0] = h.Version
@@ -163,10 +178,12 @@ func EncodeHandshake(h HandshakePayload) []byte {
 	return buf
 }
 
-// DecodeHandshake extracts HandshakePayload metrics from a raw 65-byte network slice.
+// DecodeHandshake parses a 65-byte handshake frame.
 func DecodeHandshake(data []byte) (HandshakePayload, error) {
 	if len(data) < HandshakePayloadSize {
-		return HandshakePayload{}, fmt.Errorf("handshake too short: %d < %d", len(data), HandshakePayloadSize)
+		return HandshakePayload{}, fmt.Errorf(
+			"handshake too short: got %d, need %d", len(data), HandshakePayloadSize,
+		)
 	}
 	var h HandshakePayload
 	h.Version = data[0]

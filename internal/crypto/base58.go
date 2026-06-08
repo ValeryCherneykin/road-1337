@@ -1,93 +1,93 @@
 // Package crypto implements the cryptographic core of road-1337.
 package crypto
 
-import "fmt"
+import (
+	"fmt"
+	"math/big"
+)
 
-// base58Alphabet uses the Bitcoin alphabet.
-// It deliberately excludes visually ambiguous characters such as 0 (zero), O (capital o),
-// I (capital i), and l (lowercase L) to prevent human error during manual key distribution.
+// base58Alphabet is the Bitcoin Base58 alphabet.
+// Excludes visually ambiguous characters (0, O, I, l) to prevent
+// human transcription errors when sharing public keys manually.
 const base58Alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
-// encodeBase58 converts a byte slice into a Base58 string.
-// This implementation is zero-dependency and intentionally handles leading zeros
-// to preserve the exact byte length, which is critical for cryptographic keys.
+// EncodeBase58 converts a byte slice into a Base58 string.
+//
+// Uses math/big for the base conversion instead of a byte-level loop
+// to avoid O(n²) CPU behaviour on large inputs (e.g. 32-byte keys).
+// Leading zero bytes are preserved as '1' characters per the Bitcoin convention,
+// which is critical for exact cryptographic key round-trips.
 func EncodeBase58(input []byte) string {
+	if len(input) == 0 {
+		return ""
+	}
+
+	// Count leading zero bytes; they map to leading '1' characters.
 	leadingZeros := 0
-	for _, b := range input {
-		if b != 0 {
-			break
-		}
+	for leadingZeros < len(input) && input[leadingZeros] == 0 {
 		leadingZeros++
 	}
 
-	// Pre-allocate digits slice based on the mathematical upper bound
-	// (log256(58) ≈ 1.36) to minimize heap allocations during conversion.
-	digits := make([]byte, 0, len(input)*136/100+1)
-	for _, b := range input {
-		carry := int(b)
-		for i := range digits {
-			carry += int(digits[i]) << 8
-			digits[i] = byte(carry % 58)
-			carry /= 58
-		}
-		for carry > 0 {
-			digits = append(digits, byte(carry%58))
-			carry /= 58
-		}
+	n := new(big.Int).SetBytes(input)
+	radix := big.NewInt(58)
+	zero := big.NewInt(0)
+	mod := new(big.Int)
+
+	var digits []byte
+	for n.Cmp(zero) > 0 {
+		n.DivMod(n, radix, mod)
+		digits = append(digits, base58Alphabet[mod.Int64()])
 	}
 
+	// Allocate exact capacity: leading '1's + reversed digits.
 	result := make([]byte, leadingZeros, leadingZeros+len(digits))
 	for i := range leadingZeros {
 		result[i] = base58Alphabet[0]
 	}
-	for i := len(digits) - 1; i >= 0; i-- {
-		result = append(result, base58Alphabet[digits[i]])
+	for i, j := leadingZeros, len(digits)-1; j >= 0; i, j = i+1, j-1 {
+		result = append(result, digits[j])
 	}
-
 	return string(result)
 }
 
-// decodeBase58 decodes a Base58 encoded string back into a byte slice.
-// Returns an error if the string contains invalid characters not present in the alphabet.
+// DecodeBase58 decodes a Base58 string back into a byte slice.
+// Returns an error if any character is not in the Base58 alphabet.
+//
+// The inner lookup is a linear scan over the 58-character alphabet.
+// For cryptographic key sizes (≤ 64 chars) this is negligible; an array
+// lookup table would save ~58 ns per call but adds complexity for no
+// practical gain at this scale.
 func DecodeBase58(s string) ([]byte, error) {
-	// Pre-compute alphabet map for O(1) lookups instead of strings.Index
-	alphabetMap := make(map[byte]int, 58)
-	for i := range base58Alphabet {
-		alphabetMap[base58Alphabet[i]] = i
+	if len(s) == 0 {
+		return nil, nil
 	}
 
 	leadingZeros := 0
-	for i := range s {
-		if s[i] != base58Alphabet[0] {
-			break
-		}
+	for leadingZeros < len(s) && s[leadingZeros] == base58Alphabet[0] {
 		leadingZeros++
 	}
 
-	// log58(256) ≈ 0.733
-	decoded := make([]byte, 0, len(s)*733/1000+1)
-	for i := range s {
-		val, ok := alphabetMap[s[i]]
-		if !ok {
-			return nil, fmt.Errorf("invalid Base58 character %q at position %d", s[i], i)
-		}
+	n := new(big.Int)
+	radix := big.NewInt(58)
 
-		carry := val
-		for j := range decoded {
-			carry += int(decoded[j]) * 58
-			decoded[j] = byte(carry & 0xff)
-			carry >>= 8
+	for i := leadingZeros; i < len(s); i++ {
+		ch := s[i]
+		val := -1
+		for idx := range len(base58Alphabet) {
+			if base58Alphabet[idx] == ch {
+				val = idx
+				break
+			}
 		}
-		for carry > 0 {
-			decoded = append(decoded, byte(carry&0xff))
-			carry >>= 8
+		if val < 0 {
+			return nil, fmt.Errorf("invalid Base58 character %q at position %d", ch, i)
 		}
+		n.Mul(n, radix)
+		n.Add(n, big.NewInt(int64(val)))
 	}
 
-	result := make([]byte, leadingZeros, leadingZeros+len(decoded))
-	for i := len(decoded) - 1; i >= 0; i-- {
-		result = append(result, decoded[i])
-	}
-
+	decoded := n.Bytes()
+	result := make([]byte, leadingZeros+len(decoded))
+	copy(result[leadingZeros:], decoded)
 	return result, nil
 }

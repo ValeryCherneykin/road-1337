@@ -318,7 +318,7 @@ func TestBase58Empty(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if decoded != nil && len(decoded) != 0 {
+	if len(decoded) != 0 {
 		t.Fatalf("DecodeBase58(\"\"): want nil, got %v", decoded)
 	}
 }

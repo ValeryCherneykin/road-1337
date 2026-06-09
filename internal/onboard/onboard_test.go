@@ -100,7 +100,9 @@ func TestRunInteractive(t *testing.T) {
 
 			// Write the simulated keystrokes to the stdin pipe.
 			go func() {
-				defer inW.Close()
+				defer func() {
+					_ = inW.Close()
+				}()
 				_, _ = io.WriteString(inW, tt.simulatedIn)
 			}()
 
@@ -108,7 +110,7 @@ func TestRunInteractive(t *testing.T) {
 			Run()
 
 			// Close the writer so io.ReadAll knows when to stop reading.
-			outW.Close()
+			_ = outW.Close()
 
 			// Read all captured output.
 			capturedOutput, err := io.ReadAll(outR)

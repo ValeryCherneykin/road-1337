@@ -21,7 +21,7 @@ func waitReady(t *testing.T, addr string) {
 	for time.Now().Before(deadline) {
 		c, err := net.DialTimeout("tcp", addr, 50*time.Millisecond)
 		if err == nil {
-			c.Close()
+			_ = c.Close()
 			return
 		}
 		time.Sleep(10 * time.Millisecond)
@@ -71,8 +71,12 @@ func TestRelayRouting(t *testing.T) {
 
 	connA := connect(t, "127.0.0.1:18337", kpA, hashB)
 	connB := connect(t, "127.0.0.1:18337", kpB, hashA)
-	defer connA.Close()
-	defer connB.Close()
+	defer func() {
+		_ = connA.Close()
+	}()
+	defer func() {
+		_ = connB.Close()
+	}()
 	time.Sleep(50 * time.Millisecond)
 
 	if n := srv.PeerCount(); n != 2 {
@@ -96,9 +100,13 @@ func TestRelayRouting(t *testing.T) {
 	frame := make([]byte, 32+crypto.PacketSize)
 	copy(frame[:32], hashB[:])
 	copy(frame[32:], enc)
-	connA.Write(frame)
+	if _, err := connA.Write(frame); err != nil {
+		t.Fatalf("failed to write to connA: %v", err)
+	}
 
-	connB.SetReadDeadline(time.Now().Add(2 * time.Second))
+	if err := connB.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatalf("failed to set read deadline on connB: %v", err)
+	}
 	pkt := make([]byte, crypto.PacketSize)
 	if _, err := io.ReadFull(connB, pkt); err != nil {
 		t.Fatalf("Bob did not receive packet: %v", err)
@@ -136,8 +144,12 @@ func TestRelayBidirectional(t *testing.T) {
 
 	connA := connect(t, "127.0.0.1:18338", kpA, hashB)
 	connB := connect(t, "127.0.0.1:18338", kpB, hashA)
-	defer connA.Close()
-	defer connB.Close()
+	defer func() {
+		_ = connA.Close()
+	}()
+	defer func() {
+		_ = connB.Close()
+	}()
 	time.Sleep(50 * time.Millisecond)
 
 	sA, _ := kpA.ECDH(kpB.PublicKeyBytes())
@@ -156,13 +168,20 @@ func TestRelayBidirectional(t *testing.T) {
 		frame := make([]byte, 32+crypto.PacketSize)
 		copy(frame[:32], toHash[:])
 		copy(frame[32:], enc)
-		from.Write(frame)
+
+		if _, err := from.Write(frame); err != nil {
+			t.Fatalf("failed to write frame: %v", err)
+		}
 	}
 
 	recv := func(conn net.Conn, sess *crypto.Session) string {
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+			t.Fatalf("failed to set read deadline: %v", err)
+		}
 		pkt := make([]byte, crypto.PacketSize)
-		io.ReadFull(conn, pkt)
+		if _, err := io.ReadFull(conn, pkt); err != nil {
+			t.Fatalf("did not receive packet: %v", err)
+		}
 		plain, _ := sess.Open(pkt)
 		_, body, _ := protocol.DecodeHeader(plain)
 		return string(body)
@@ -207,7 +226,9 @@ func TestRelaySnapshot(t *testing.T) {
 	hash := sha256.Sum256(kp.PublicKeyBytes())
 
 	conn := connect(t, "127.0.0.1:18341", kp, hash)
-	defer conn.Close()
+	defer func() {
+		_ = conn.Close()
+	}()
 	time.Sleep(50 * time.Millisecond)
 
 	snap := srv.Snapshot()

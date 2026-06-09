@@ -147,7 +147,9 @@ func TestSession_AppendChunk_OversizedReject(t *testing.T) {
 
 	// Generate chunk larger than allowed size
 	badChunk := make([]byte, protocol.ChunkSize+1)
-	rand.Read(badChunk)
+	if _, err := rand.Read(badChunk); err != nil {
+		t.Fatalf("failed to generate random data: %v", err)
+	}
 
 	sess.appendChunk(fileID, badChunk)
 

@@ -36,8 +36,16 @@ func MarkDone() {
 	if err != nil {
 		return
 	}
-	os.MkdirAll(filepath.Dir(path), 0o700)
-	os.WriteFile(path, []byte("1"), 0o600)
+
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to create config directory: %v\n", err)
+		return
+	}
+
+	if err := os.WriteFile(path, []byte("1"), 0o600); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to create sentinel file: %v\n", err)
+	}
 }
 
 // Run presents the bilingual onboarding guide and returns when the user
@@ -76,7 +84,7 @@ func Run() {
 func printGuideEN(r *bufio.Reader) {
 	banner := `
   ╔══════════════════════════════════════════════════════════════════════╗
-  ║           road-1337 · Security Guide & First-Run Setup              ║
+  ║            road-1337 · Security Guide & First-Run Setup              ║
   ╚══════════════════════════════════════════════════════════════════════╝`
 	fmt.Println(banner)
 	fmt.Println()
@@ -153,9 +161,9 @@ func printGuideEN(r *bufio.Reader) {
   road-1337 is open-source software provided AS IS.
 
   USE AT YOUR OWN RISK. The developer makes NO GUARANTEE of:
-    • Complete anonymity in all threat models.
-    • Resistance to nation-state-level adversaries.
-    • Bug-free operation in all environments.
+     • Complete anonymity in all threat models.
+     • Resistance to nation-state-level adversaries.
+     • Bug-free operation in all environments.
 
   You are responsible for your own operational security.
   If you are operating under a high-risk threat model, consult a
@@ -166,7 +174,7 @@ func printGuideEN(r *bufio.Reader) {
 		fmt.Println(section)
 		fmt.Println()
 		fmt.Printf("  [%d/%d] Press Enter to continue...", i+1, len(sections))
-		r.ReadString('\n')
+		_, _ = r.ReadString('\n')
 		fmt.Println()
 	}
 
@@ -179,7 +187,7 @@ func printGuideEN(r *bufio.Reader) {
 	fmt.Println("  via a secure out-of-band channel.")
 	fmt.Println()
 	fmt.Print("  Press Enter to generate your keypair...")
-	r.ReadString('\n')
+	_, _ = r.ReadString('\n')
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -247,7 +255,7 @@ func printGuideRU(r *bufio.Reader) {
 
   3. СЕТЕВОЙ УРОВЕНЬ
      road-1337 шифрует содержимое, но не метаданные (IP-адреса).
-     Для анонимности на уровне сети используй туннели:
+     For IP anonymity, tunnel through:
        • Tor (torsocks road-1337 ...)
        • VLESS/Reality прокси
        • Доверенный VPN
@@ -266,20 +274,20 @@ func printGuideRU(r *bufio.Reader) {
   предоставляемое "КАК ЕСТЬ" (AS IS).
 
   ИСПОЛЬЗОВАТЬ НА СВОЙ СТРАХ И РИСК. Разработчик НЕ ГАРАНТИРУЕТ:
-    • Полную анонимность во всех моделях угроз.
-    • Защиту от атак на уровне государственных структур.
-    • Безошибочную работу во всех окружениях.
+     • Полную анонимность во всех моделях угроз.
+     • Защиту от атак на уровне государственных структур.
+     • Безошибочную работу во всех окружениях.
 
   Ты несёшь ответственность за собственную операционную безопасность.
   При работе в условиях высокого уровня угроз — проконсультируйся
-  с профессиональным исследователем безопасности.`,
+  with a professional security researcher.`,
 	}
 
 	for i, section := range sections {
 		fmt.Println(section)
 		fmt.Println()
 		fmt.Printf("  [%d/%d] Нажми Enter для продолжения...", i+1, len(sections))
-		r.ReadString('\n')
+		_, _ = r.ReadString('\n') // Исправлено: добавлены пустые идентификаторы для errcheck
 		fmt.Println()
 	}
 
@@ -292,7 +300,7 @@ func printGuideRU(r *bufio.Reader) {
 	fmt.Println("  через безопасный внеполосный канал.")
 	fmt.Println()
 	fmt.Print("  Нажми Enter для генерации ключевой пары...")
-	r.ReadString('\n')
+	_, _ = r.ReadString('\n') // Исправлено: добавлены пустые идентификаторы для errcheck
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

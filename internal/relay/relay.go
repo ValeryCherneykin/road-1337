@@ -114,7 +114,7 @@ func (s *Server) Run(addr string) error {
 		}
 
 		if s.isFull() {
-			conn.Close()
+			_ = conn.Close()
 			continue
 		}
 
@@ -130,13 +130,13 @@ func (s *Server) Stop() {
 
 		s.listenerMu.Lock()
 		if s.listener != nil {
-			s.listener.Close()
+			_ = s.listener.Close()
 		}
 		s.listenerMu.Unlock()
 
 		s.mu.Lock()
 		for _, p := range s.peers {
-			p.conn.Close()
+			_ = p.conn.Close()
 		}
 		s.mu.Unlock()
 
@@ -151,7 +151,7 @@ func (s *Server) handleConn(conn net.Conn) {
 
 	p, err := s.doHandshake(conn)
 	if err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return
 	}
 
@@ -165,7 +165,9 @@ func (s *Server) doHandshake(conn net.Conn) (*peer, error) {
 	if err := conn.SetDeadline(time.Now().Add(handshakeTimeout)); err != nil {
 		return nil, err
 	}
-	defer conn.SetDeadline(time.Time{})
+	defer func() {
+		_ = conn.SetDeadline(time.Time{})
+	}()
 
 	buf := make([]byte, protocol.HandshakePayloadSize)
 	if _, err := io.ReadFull(conn, buf); err != nil {
@@ -194,14 +196,14 @@ func (s *Server) register(p *peer) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if old, exists := s.peers[p.keyHash]; exists {
-		old.conn.Close()
+		_ = old.conn.Close()
 	}
 	s.peers[p.keyHash] = p
 }
 
 func (s *Server) evict(p *peer) {
 	p.once.Do(func() {
-		p.conn.Close()
+		_ = p.conn.Close()
 		s.mu.Lock()
 		if cur, ok := s.peers[p.keyHash]; ok && cur == p {
 			delete(s.peers, p.keyHash)

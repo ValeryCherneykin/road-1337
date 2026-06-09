@@ -282,7 +282,8 @@ func cmdTUIDemo() error {
 		}
 	}()
 
-	return p.Start()
+	_, err := p.Run()
+	return err
 }
 
 // ── usage ─────────────────────────────────────────────────────────────────────

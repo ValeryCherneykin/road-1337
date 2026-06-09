@@ -27,6 +27,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"os"
 	"path/filepath"
@@ -113,7 +114,9 @@ func (s *Session) Run(serverAddr string) error {
 	// so it never blocks waiting for the TUI event loop to start.
 	go s.connect(serverAddr)
 
-	return p.Start()
+	_, err := p.Run()
+
+	return err
 }
 
 // connect performs ECDH, TCP dial, and protocol handshake, then starts the I/O loops.
@@ -154,7 +157,7 @@ func (s *Session) connect(serverAddr string) {
 		RecipientKeyHash: s.peerKeyHash,
 	}
 	if _, err := conn.Write(protocol.EncodeHandshake(hs)); err != nil {
-		conn.Close()
+		_ = conn.Close()
 		cs.Zeroize()
 		s.abortWithMsg("handshake failed: " + err.Error())
 		return
@@ -191,7 +194,7 @@ func (s *Session) Zeroize() {
 			s.cipherSess = nil
 		}
 		if s.conn != nil {
-			s.conn.Close()
+			_ = s.conn.Close()
 			s.conn = nil
 		}
 		s.stateMu.Unlock()
@@ -201,7 +204,7 @@ func (s *Session) Zeroize() {
 		s.transfersMu.Lock()
 		for _, ft := range s.transfers {
 			if ft.file != nil {
-				ft.file.Close()
+				_ = ft.file.Close()
 			}
 		}
 		s.transfers = make(map[uint32]*fileTransfer)
@@ -261,7 +264,9 @@ func (s *Session) recvLoop() {
 			return
 		}
 
-		conn.SetReadDeadline(time.Now().Add(recvDeadline))
+		if err := conn.SetReadDeadline(time.Now().Add(recvDeadline)); err != nil {
+			log.Printf("failed to set deadline: %v", err)
+		}
 		if _, err := io.ReadFull(conn, packet); err != nil {
 			select {
 			case <-s.done:
@@ -342,7 +347,11 @@ func (s *Session) sendFile(path string) {
 		s.incoming <- tui.IncomingTextMsg{Text: "⚠  open: " + err.Error()}
 		return
 	}
-	defer f.Close()
+	defer func() {
+		if err := f.Close(); err != nil {
+			log.Printf("error closing file: %v", err)
+		}
+	}()
 
 	info, err := f.Stat()
 	if err != nil {
@@ -492,7 +501,7 @@ func (s *Session) appendChunk(fileID uint32, body []byte) {
 		s.incoming <- tui.IncomingTextMsg{
 			Text: fmt.Sprintf("⚠  oversized chunk (%d B) — transfer aborted", len(body)),
 		}
-		ft.file.Close()
+		_ = ft.file.Close()
 		ft.done = true
 		s.transfersMu.Lock()
 		delete(s.transfers, fileID)
@@ -516,7 +525,7 @@ func (s *Session) appendChunk(fileID uint32, body []byte) {
 	s.incoming <- tui.FileProgressMsg{Status: tui.RenderProgress(ft.fh.Filename, pct)}
 
 	if ft.receivedBytes >= ft.fh.TotalSize {
-		ft.file.Close()
+		_ = ft.file.Close()
 		ft.done = true
 
 		s.transfersMu.Lock()
@@ -561,7 +570,9 @@ func (s *Session) sendPacket(payload []byte) error {
 	copy(frame[:32], s.peerKeyHash[:])
 	copy(frame[32:], enc)
 
-	conn.SetWriteDeadline(time.Now().Add(writeDeadline))
+	if err := conn.SetWriteDeadline(time.Now().Add(writeDeadline)); err != nil {
+		return fmt.Errorf("set write deadline: %w", err)
+	}
 	_, err = conn.Write(frame)
 	return err
 }

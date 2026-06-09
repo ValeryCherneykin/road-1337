@@ -148,10 +148,12 @@ func DecodeFileHeader(data []byte) (FileHeaderPayload, error) {
 	if len(data) < 18 {
 		return FileHeaderPayload{}, fmt.Errorf("file header too short: %d bytes", len(data))
 	}
-	nameLen := binary.BigEndian.Uint16(data[16:])
-	if int(18+nameLen) > len(data) {
+	nameLen := int(binary.BigEndian.Uint16(data[16:]))
+
+	if 18+nameLen > len(data) {
 		return FileHeaderPayload{}, fmt.Errorf("truncated filename in file header")
 	}
+
 	return FileHeaderPayload{
 		TotalSize:   binary.BigEndian.Uint64(data[0:]),
 		TotalChunks: binary.BigEndian.Uint32(data[8:]),

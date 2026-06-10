@@ -29,8 +29,8 @@ archives:
         format: zip
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     files:
-      - license
-      - readme.md
+      - LICENSE
+      - README.md
 
 checksum:
   name_template: "checksums.txt"

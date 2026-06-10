@@ -34,4 +34,4 @@ jobs:
           args: release --clean --parallelism 1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.ROAD_1337_TOKEN }}

@@ -11,9 +11,9 @@ builds:
     main: ./cmd/road-1337
     binary: road-1337
     env:
-      - CGO_ENABLED=0
+      - cgo_enabled=0
     ldflags:
-      - -s -w -X main.Version={{.Version}}
+      - -s -w -x main.version={{.version}}
     goos:
       - linux
       - darwin
@@ -27,10 +27,10 @@ archives:
     format_overrides:
       - goos: windows
         format: zip
-    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    name_template: "{{ .projectname }}_{{ .version }}_{{ .os }}_{{ .arch }}"
     files:
-      - LICENSE
-      - README.md
+      - license
+      - readme.md
 
 checksum:
   name_template: "checksums.txt"
@@ -38,54 +38,54 @@ checksum:
 
 release:
   github:
-    owner: ValeryCherneykin
+    owner: valerycherneykin
     name: road-1337
   mode: replace
-  name_template: "v{{ .Version }}"
+  name_template: "v{{ .version }}"
 
 brews:
   - name: road-1337
     repository:
-      owner: ValeryCherneykin
+      owner: valerycherneykin
       name: homebrew-road-1337
-      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-    directory: Formula
-    homepage: https://github.com/ValeryCherneykin/road-1337
-    description: "End-to-end encrypted terminal messenger"
-    license: MIT
+      token: "{{ .Env.ROAD_1337_TOKEN }}"
+    directory: formula
+    homepage: https://github.com/valerycherneykin/road-1337
+    description: "end-to-end encrypted terminal messenger"
+    license: mit
     install: |
       bin.install "road-1337"
 
 # ────────────────────────────────────────────────
-# Docker Support (Multi-arch images)
+# docker support (multi-arch images)
 # ────────────────────────────────────────────────
 dockers:
   - image_templates:
-      - "ghcr.io/ValeryCherneykin/road-1337:{{ .Version }}-amd64"
+      - "ghcr.io/valerycherneykin/road-1337:{{ .version }}-amd64"
     use: buildx
     goos: linux
     goarch: amd64
     build_flag_templates:
       - "--platform=linux/amd64"
-      - "--label=org.opencontainers.image.title={{ .ProjectName }}"
-      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.title={{ .projectname }}"
+      - "--label=org.opencontainers.image.version={{ .version }}"
 
   - image_templates:
-      - "ghcr.io/ValeryCherneykin/road-1337:{{ .Version }}-arm64"
+      - "ghcr.io/valerycherneykin/road-1337:{{ .version }}-arm64"
     use: buildx
     goos: linux
     goarch: arm64
     build_flag_templates:
       - "--platform=linux/arm64"
-      - "--label=org.opencontainers.image.title={{ .ProjectName }}"
-      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.title={{ .projectname }}"
+      - "--label=org.opencontainers.image.version={{ .version }}"
 
 docker_manifests:
-  - name_template: "ghcr.io/ValeryCherneykin/road-1337:{{ .Version }}"
+  - name_template: "ghcr.io/valerycherneykin/road-1337:{{ .version }}"
     image_templates:
-      - "ghcr.io/ValeryCherneykin/road-1337:{{ .Version }}-amd64"
-      - "ghcr.io/ValeryCherneykin/road-1337:{{ .Version }}-arm64"
-  - name_template: "ghcr.io/ValeryCherneykin/road-1337:latest"
+      - "ghcr.io/valerycherneykin/road-1337:{{ .version }}-amd64"
+      - "ghcr.io/valerycherneykin/road-1337:{{ .version }}-arm64"
+  - name_template: "ghcr.io/valerycherneykin/road-1337:latest"
     image_templates:
-      - "ghcr.io/ValeryCherneykin/road-1337:{{ .Version }}-amd64"
-      - "ghcr.io/ValeryCherneykin/road-1337:{{ .Version }}-arm64"
+      - "ghcr.io/valerycherneykin/road-1337:{{ .version }}-amd64"
+      - "ghcr.io/valerycherneykin/road-1337:{{ .version }}-arm64"

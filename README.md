@@ -59,7 +59,7 @@ brew install road-1337
 PowerShell
 
 ```
-scoop bucket add road-1337 [https://github.com/ValeryCherneykin/scoop-road-1337.git](https://github.com/ValeryCherneykin/scoop-road-1337.git)
+scoop bucket add road-1337 https://github.com/ValeryCherneykin/scoop-road-1337.git
 scoop install road-1337/road-1337
 ```
 

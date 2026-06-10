@@ -51,24 +51,21 @@ brews:
       token: "{{ .Env.ROAD_1337_TOKEN }}"
     directory: formula
     homepage: https://github.com/valerycherneykin/road-1337
-    description: "end-to-end encrypted terminal messenger"
-    license: mit
+    description: "End-to-end encrypted terminal messenger"
+    license: MIT
     install: |
       bin.install "road-1337"
 
 scoops:
   - name: road-1337
     repository:
-      owner: ValeryCherneykin
+      owner: valerycherneykin
       name: scoop-road-1337
       token: "{{ .Env.ROAD_1337_TOKEN }}"
-    homepage: https://github.com/ValeryCherneykin/road-1337
+    homepage: https://github.com/valerycherneykin/road-1337
     description: "End-to-end encrypted terminal messenger"
     license: MIT
 
-# ────────────────────────────────────────────────
-# docker support (multi-arch images)
-# ────────────────────────────────────────────────
 dockers:
   - image_templates:
       - "ghcr.io/valerycherneykin/road-1337:{{ .Version }}-amd64"

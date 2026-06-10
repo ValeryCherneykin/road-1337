@@ -11,9 +11,9 @@ builds:
     main: ./cmd/road-1337
     binary: road-1337
     env:
-      - cgo_enabled=0
+      - CGO_ENABLED=0
     ldflags:
-      - -s -w -x main.version={{.version}}
+      - -s -w -X main.version={{.Version}}
     goos:
       - linux
       - darwin
@@ -27,7 +27,7 @@ archives:
     format_overrides:
       - goos: windows
         format: zip
-    name_template: "{{ .projectname }}_{{ .version }}_{{ .os }}_{{ .arch }}"
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     files:
       - license
       - readme.md
@@ -41,7 +41,7 @@ release:
     owner: valerycherneykin
     name: road-1337
   mode: replace
-  name_template: "v{{ .version }}"
+  name_template: "v{{ .Version }}"
 
 brews:
   - name: road-1337
@@ -71,31 +71,31 @@ scoops:
 # ────────────────────────────────────────────────
 dockers:
   - image_templates:
-      - "ghcr.io/valerycherneykin/road-1337:{{ .version }}-amd64"
+      - "ghcr.io/valerycherneykin/road-1337:{{ .Version }}-amd64"
     use: buildx
     goos: linux
     goarch: amd64
     build_flag_templates:
       - "--platform=linux/amd64"
-      - "--label=org.opencontainers.image.title={{ .projectname }}"
-      - "--label=org.opencontainers.image.version={{ .version }}"
+      - "--label=org.opencontainers.image.title={{ .ProjectName }}"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
 
   - image_templates:
-      - "ghcr.io/valerycherneykin/road-1337:{{ .version }}-arm64"
+      - "ghcr.io/valerycherneykin/road-1337:{{ .Version }}-arm64"
     use: buildx
     goos: linux
     goarch: arm64
     build_flag_templates:
       - "--platform=linux/arm64"
-      - "--label=org.opencontainers.image.title={{ .projectname }}"
-      - "--label=org.opencontainers.image.version={{ .version }}"
+      - "--label=org.opencontainers.image.title={{ .ProjectName }}"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
 
 docker_manifests:
-  - name_template: "ghcr.io/valerycherneykin/road-1337:{{ .version }}"
+  - name_template: "ghcr.io/valerycherneykin/road-1337:{{ .Version }}"
     image_templates:
-      - "ghcr.io/valerycherneykin/road-1337:{{ .version }}-amd64"
-      - "ghcr.io/valerycherneykin/road-1337:{{ .version }}-arm64"
+      - "ghcr.io/valerycherneykin/road-1337:{{ .Version }}-amd64"
+      - "ghcr.io/valerycherneykin/road-1337:{{ .Version }}-arm64"
   - name_template: "ghcr.io/valerycherneykin/road-1337:latest"
     image_templates:
-      - "ghcr.io/valerycherneykin/road-1337:{{ .version }}-amd64"
-      - "ghcr.io/valerycherneykin/road-1337:{{ .version }}-arm64"
+      - "ghcr.io/valerycherneykin/road-1337:{{ .Version }}-amd64"
+      - "ghcr.io/valerycherneykin/road-1337:{{ .Version }}-arm64"

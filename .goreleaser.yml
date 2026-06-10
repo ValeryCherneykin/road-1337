@@ -1,0 +1,55 @@
+version: 2
+project_name: road-1337
+
+before:
+  hooks:
+    - go mod tidy
+    - go test ./...
+
+builds:
+  - id: road-1337
+    main: ./cmd/road-1337
+    binary: road-1337
+    ldflags:
+      - -s -w -X main.Version={{.Version}}
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - format: tar.gz
+    format_overrides:
+      - goos: windows
+        format: zip
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+release:
+  github:
+    owner: ValeryCherneykin
+    name: road-1337
+  mode: replace
+  name_template: "v{{ .Version }}"
+
+brews:
+  - name: road-1337
+    repository:
+      owner: ValeryCherneykin
+      name: homebrew-road-1337
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    homepage: https://github.com/ValeryCherneykin/road-1337
+    description: "End-to-end encrypted terminal messenger"
+    license: MIT
+    install: |
+      bin.install "road-1337"

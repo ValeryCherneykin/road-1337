@@ -1,13 +1,17 @@
-<div align="center">
-  <img src="assets/logo.png" alt="road-1337 logo" width="200" />
+<p align="center">
+  <img src="assets/logo.png" alt="road-1337 logo" style="width: 100%; max-width: 100%; height: auto;" />
+</p>
 
-  <h1>road-1337</h1>
-  <p><strong>Blind Relay E2EE — Zero Trust Infrastructure</strong></p>
-  <p><em>Ephemeral. RAM-only. Unobservable.</em></p>
-  
+<h1 align="center">road-1337</h1>
+<p align="center">
+  <strong>Blind Relay E2EE — Zero Trust Infrastructure</strong><br>
+  <em>Ephemeral. RAM-only. Unobservable.</em>
+</p>
+
+<p align="center">
   <a href="https://github.com/ValeryCherneykin/road-1337/releases"><img src="https://img.shields.io/github/v/release/ValeryCherneykin/road-1337?style=flat-square&color=00e5ff" alt="Release"></a>
   <a href="https://github.com/ValeryCherneykin/road-1337/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square" alt="License"></a>
-</div>
+</p>
 
 ---
 
